@@ -1,12 +1,8 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {createContext, FunctionComponent, useContext, useEffect, useState} from 'react';
 import '@elastic/eui/dist/eui_theme_light.css';
 import './App.css';
 import {EuiPanel, EuiText, EuiCode, EuiDataGrid, EuiDataGridProps, EuiDataGridCellValueElementProps, EuiFieldText, EuiButtonEmpty} from '@elastic/eui';
-
-// @ts-ignore
-import Store from 'insula';
-// @ts-ignore
-import { connect, Provider } from 'react-insula';
+import Sheet from "./Sheet";
 
 const COLUMN_COUNT = 10;
 const ROW_COUNT = 20;
@@ -21,167 +17,56 @@ const leadingControlColumns: EuiDataGridProps['leadingControlColumns'] = [
   {
     id: 'rowcount',
     headerCellRender: () => null,
-    rowCellRender: ({ rowIndex }) => <strong>&nbsp;{rowIndex}</strong>,
+    rowCellRender: ({ rowIndex }) => <strong>&nbsp;{rowIndex + 1}</strong>,
     width: 40,
   },
 ];
 
-const store = new Store({
-  cells: {},
-  cellDependencies: {},
-  cellDependants: {},
-  cellNotifiers: {},
-});
-for (let i = 0; i < COLUMN_COUNT; i++) {
-    for (let j = 0; j < ROW_COUNT; j++) {
-        const columnId = generateColumnIdFromIndex(i);
-        const rowIndex = j.toString();
-        store.setPartialState(['cells', `${columnId}${rowIndex}`], '');
-    }
-}
-
-store.on(
-  'SET_VALUE',
-  ({ stateSelector, value }: { stateSelector: string[], value: string }, { setPartialState }: { setPartialState: Function }) => {
-      setPartialState(stateSelector, value);
-  }
-);
-
-store.on(
-  'SET_NOTIFIER',
-  ({ cellId, notifier }: { cellId: string, notifier: Function }, { setPartialState }: { setPartialState: Function } ) => {
-    setPartialState(['cellNotifiers', cellId], notifier);
-  }
-);
-
-store.on(
-  'UPDATE_DEPENDENCIES',
-  ({ cellId, value }: { cellId: string, value: string }, { getPartialState, setPartialState }: { getPartialState: Function, setPartialState: Function }) => {
-    // 1 - update this cells dependencies
-    const dependenciesSelector = ['cellDependencies', cellId];
-    const oldDependencies: string[] = getPartialState(dependenciesSelector) || [];
-    let dependencies: string[] = [];
-    if (value.startsWith('=')) {
-      dependencies = value.match(/[A-Z]+\d+/g) || [];
-    }
-    setPartialState(dependenciesSelector, dependencies);
-
-    // 2 - update dependencies' dependants lists
-    for (let i = 0; i < oldDependencies.length; i++) {
-      const dependencyCellId = oldDependencies[i];
-      const dependencysDependants = getPartialState(['cellDependants', dependencyCellId]).filter((dependantCell: string) => dependantCell !== cellId);
-      setPartialState(['cellDependants', dependencyCellId], dependencysDependants);
-    }
-    for (let i = 0; i < dependencies.length; i++) {
-      const dependencyCellId = dependencies[i];
-      const dependencysDependants = (getPartialState(['cellDependants', dependencyCellId]) || []).slice();
-      if (dependencysDependants.indexOf(cellId) === -1) {
-        dependencysDependants.push(cellId);
-      }
-      setPartialState(['cellDependants', dependencyCellId], dependencysDependants);
-    }
-
-    // 3 - notify dependant cells
-    notifyDependants(cellId, getPartialState);
-  }
-);
-
-function notifyDependants(cellId: string, getPartialState: Function, depth = 0) {
-  if (depth === 3) return; // prefer not infinite looping over definite consistency
-
-  const dependants = getPartialState(['cellDependants', cellId]) || [];
-  for (let i = 0; i < dependants.length; i++) {
-    const dependantCell = dependants[i];
-    getPartialState(['cellNotifiers', dependantCell])();
-    notifyDependants(dependantCell, getPartialState, depth + 1);
-  }
-}
+const sheet = new Sheet(COLUMN_COUNT, ROW_COUNT);
+const SheetContext = createContext(sheet);
 
 const columnVisibilty = {
   visibleColumns: columns.map(({ id }) => id),
   setVisibleColumns() {},
 };
 
-function evalCellValue(isFocused: boolean, value: string) {
-  let displayValue = value;
-  let isInvalid = false;
-  if (isFocused === false && value.startsWith('=')) {
-    try {
-      displayValue = eval(
-        value
-          .substr(1, value.length - 1)
-          .replace(
-            /[A-Z]+\d+/g,
-            (cellId) => {
-              const result = evalCellValue(false, store.getPartialState(['cells', cellId]));
-              return result.displayValue;
-            }
-          )
-      );
-    } catch (e) {
-      displayValue = `#${e.message}#`;
-      isInvalid = true;
-    }
-  }
-
-  return { displayValue, isInvalid };
-}
-
-const UnconnectedCell = ({ value, setValue, stateSelector, setNotifier, updateDependencies }: { value: string, setValue: Function, stateSelector: string[], setNotifier: Function, updateDependencies: Function }) => {
+const UnconnectedCell: FunctionComponent<EuiDataGridCellValueElementProps> = ({ rowIndex, columnId }) => {
+  const sheet = useContext(SheetContext);
   const [isFocused, setIsFocused] = useState(false);
-  const { displayValue, isInvalid } = evalCellValue(isFocused, value);
+  const [value, setValue] = useState('');
 
-  const cellId = stateSelector[1];
+  const [{ isInvalid, displayValue }, setDisplayValue] = useState({ isInvalid: false, displayValue: '' });
 
-  const [, setNotifications] = useState(0);
+  const cellId = `${columnId}${rowIndex + 1}`;
+
   useEffect(
     () => {
-      setNotifier({
+      sheet.setCellNotifier(
         cellId,
-        notifier: () => setNotifications(notifications => notifications + 1)
-      });
+        () => setDisplayValue(sheet.evalCellValue(cellId))
+      );
     },
-    []
+    [cellId, sheet]
   );
 
   return (
     <EuiFieldText
       className="tissueEntry"
-      value={displayValue}
+      value={isFocused ? value : displayValue}
       isInvalid={isInvalid}
-      onChange={(e) => setValue({ stateSelector, value: e.target.value })}
+      onChange={(e) => setValue(e.target.value)}
       onFocus={() => setIsFocused(true)}
       onBlur={() => {
         setIsFocused(false);
-        updateDependencies({ cellId, value });
+        sheet.setCellValue(cellId, value);
       }}
     />
   );
 };
-const useRenderCellValue = ({ rowIndex, columnId }: EuiDataGridCellValueElementProps) => {
-  const stateSelector = useMemo(() => ['cells', `${columnId}${rowIndex}`], [ rowIndex, columnId ]);
-  const connectedComponent = useMemo(
-      () => {
-          const ConnectedComponent = connect(
-              [stateSelector],
-              ([value]: [string], { bindDispatch }: { bindDispatch: Function }) => ({
-                value,
-                stateSelector,
-                setValue: bindDispatch('SET_VALUE'),
-                setNotifier: bindDispatch('SET_NOTIFIER'),
-                updateDependencies: bindDispatch('UPDATE_DEPENDENCIES')
-              })
-          )(UnconnectedCell);
-          return <ConnectedComponent/>;
-      },
-      [stateSelector]
-  );
-  return connectedComponent;
-};
 
 function App() {
   return (
-    <Provider store={store}>
+    <SheetContext.Provider value={sheet}>
       <EuiPanel>
         <EuiText>
           A small spreadsheet app built on top of EuiDataGrid. Cell values starting with <EuiCode>=</EuiCode> are run through <EuiCode>eval()</EuiCode>, so great power yadda yadda. Cell names are dynamically replaced with their values at execution.
@@ -194,13 +79,13 @@ function App() {
         leadingControlColumns={leadingControlColumns}
         columns={columns}
         columnVisibility={columnVisibilty}
-        renderCellValue={useRenderCellValue}
+        renderCellValue={UnconnectedCell}
         gridStyle={{
           fontSize: 's',
         }}
         toolbarVisibility={false}
       />
-    </Provider>
+    </SheetContext.Provider>
   );
 }
 
