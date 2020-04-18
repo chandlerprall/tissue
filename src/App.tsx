@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import '@elastic/eui/dist/eui_theme_light.css';
 import './App.css';
-import {EuiDataGrid, EuiDataGridProps, EuiDataGridCellValueElementProps, EuiFieldText} from '@elastic/eui';
+import {EuiPanel, EuiText, EuiCode, EuiDataGrid, EuiDataGridProps, EuiDataGridCellValueElementProps, EuiFieldText, EuiButtonEmpty} from '@elastic/eui';
 
 // @ts-ignore
 import Store from 'insula';
@@ -19,7 +19,7 @@ for (let i = 0; i < COLUMN_COUNT; i++) {
 
 const leadingControlColumns: EuiDataGridProps['leadingControlColumns'] = [
   {
-    id: 'asdf',
+    id: 'rowcount',
     headerCellRender: () => null,
     rowCellRender: ({ rowIndex }) => <strong>&nbsp;{rowIndex}</strong>,
     width: 40,
@@ -182,6 +182,12 @@ const useRenderCellValue = ({ rowIndex, columnId }: EuiDataGridCellValueElementP
 function App() {
   return (
     <Provider store={store}>
+      <EuiPanel>
+        <EuiText>
+          A small spreadsheet app built on top of EuiDataGrid. Cell values starting with <EuiCode>=</EuiCode> are run through <EuiCode>eval()</EuiCode>, so great power yadda yadda. Cell names are dynamically replaced with their values at execution.
+          <EuiButtonEmpty iconType="logoGithub" iconSide="right" href="https://github.com/chandlerprall/tissue" target="_blank">View on GitHub</EuiButtonEmpty>
+        </EuiText>
+      </EuiPanel>
       <EuiDataGrid
         aria-label="EuiTissue"
         rowCount={ROW_COUNT}

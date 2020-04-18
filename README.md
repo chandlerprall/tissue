@@ -1,3 +1,13 @@
+# Tissue
+
+... because it's made up of cells
+
+A demo project I've wanted to put together since [EuiDataGrid](https://elastic.github.io/eui/#/tabular-content/data-grid) was in its infancy. This builds a small cell evaluation & dependency layer on top of the datagrid. "Fun" is weird these days.
+
+Live demo at https://tissue.chandlerprall.com/
+
+---
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
