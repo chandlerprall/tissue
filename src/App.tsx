@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, {useMemo, useState} from 'react';
 import '@elastic/eui/dist/eui_theme_light.css';
 import './App.css';
 import {EuiDataGrid, EuiDataGridProps, EuiDataGridCellValueElementProps, EuiFieldText} from '@elastic/eui';
@@ -17,7 +17,19 @@ for (let i = 0; i < COLUMN_COUNT; i++) {
   columns.push({ id: generateColumnIdFromIndex(i), isExpandable: false });
 }
 
-const store = new Store();
+const leadingControlColumns: EuiDataGridProps['leadingControlColumns'] = [
+  {
+    id: 'asdf',
+    headerCellRender: () => null,
+    rowCellRender: ({ rowIndex }) => <strong>&nbsp;{rowIndex}</strong>,
+    width: 40,
+  },
+];
+
+const store = new Store({
+  cells: {},
+  cellDependencies: {},
+});
 for (let i = 0; i < COLUMN_COUNT; i++) {
     for (let j = 0; j < ROW_COUNT; j++) {
         const columnId = generateColumnIdFromIndex(i);
@@ -38,11 +50,43 @@ const columnVisibilty = {
   setVisibleColumns() {},
 };
 
-const UnconnectedCell = ({ value, setValue, stateSelector }: { value: string, setValue: Function, stateSelector: string[] }) => {
+function evalCellValue(isFocused: boolean, value: string) {
+  let displayValue = value;
+  let isInvalid = false;
+  if (isFocused === false && value.startsWith('=')) {
+    try {
+      displayValue = eval(
+        value
+          .substr(1, value.length - 1)
+          .replace(
+            /[A-Z]+\d+/g,
+            (cellId) => {
+              const result = evalCellValue(true, store.getPartialState(['cells', cellId]));
+              return result.displayValue;
+            }
+          )
+      );
+    } catch (e) {
+      displayValue = `#${e.message}#`;
+      isInvalid = true;
+    }
+  }
+
+  return { displayValue, isInvalid };
+}
+
+const UnconnectedCell = ({ value, setValue, stateSelector, setNotifier }: { value: string, setValue: Function, stateSelector: string[], setNotifier: Function }) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const { displayValue, isInvalid } = evalCellValue(isFocused, value);
+
   return (
     <EuiFieldText
-      value={value}
+      className="tissueEntry"
+      value={displayValue}
+      isInvalid={isInvalid}
       onChange={(e) => setValue({ stateSelector, value: e.target.value })}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
     />
   );
 };
@@ -53,9 +97,10 @@ const useRenderCellValue = ({ rowIndex, columnId }: EuiDataGridCellValueElementP
           const ConnectedComponent = connect(
               [stateSelector],
               ([value]: [string], { bindDispatch }: { bindDispatch: Function }) => ({
-                  value,
-                  setValue: bindDispatch('SET_VALUE'),
-                  stateSelector
+                value,
+                stateSelector,
+                setValue: bindDispatch('SET_VALUE'),
+                setNotifier: bindDispatch('SET_NOTIFIER'),
               })
           )(UnconnectedCell);
           return <ConnectedComponent/>;
@@ -71,6 +116,7 @@ function App() {
       <EuiDataGrid
         aria-label="EuiTissue"
         rowCount={ROW_COUNT}
+        leadingControlColumns={leadingControlColumns}
         columns={columns}
         columnVisibility={columnVisibilty}
         renderCellValue={useRenderCellValue}
